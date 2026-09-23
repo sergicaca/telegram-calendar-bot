@@ -41,6 +41,14 @@ que la usas.
 - `TELEGRAM_CHAT_ID`: el que sacaste con `getUpdates` (el mismo que usamos para la tarea de Cowork).
 - `ANTHROPIC_API_KEY`: clave de la API de Anthropic. Si no tienes una, se crea en [console.anthropic.com](https://console.anthropic.com/) → API Keys. (Ojo: esto factura aparte de tu suscripción de Claude, por uso — con el volumen de mensajes de un bot personal el coste es mínimo, céntimos al mes.)
 
+## 2bis. Transcripción de audios (Groq)
+
+Para que el bot entienda notas de voz, hace falta una clave de **Groq** (servicio de transcripción, plan gratuito sin tarjeta):
+
+1. Ve a [console.groq.com](https://console.groq.com/) y crea una cuenta (puedes usar tu cuenta de Google para registrarte).
+2. Menú → **API Keys** → **Create API Key**. Ponle un nombre y cópiala — es tu `GROQ_API_KEY`.
+3. El plan gratuito da 2.000 transcripciones al día, más que de sobra para uso personal, sin necesidad de tarjeta de crédito.
+
 ## 3. Desplegar en Railway
 
 1. Sube esta carpeta (`bot.py`, `requirements.txt`, `Procfile`) a un repositorio nuevo en GitHub.
@@ -55,6 +63,7 @@ que la usas.
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
    GOOGLE_REFRESH_TOKEN=...
+   GROQ_API_KEY=...
    ```
    Opcionales (si no las pones, usa estos valores por defecto):
    ```
@@ -69,11 +78,14 @@ que la usas.
 
 - `/hoy` y `/manana` → lista de eventos de tu Google Calendar.
 - `/tareas` → lista tus pendientes.
+- `/deseos` → lista tu lista de deseos/compras futuras.
 - *"añade cena con Marta el viernes de 21:00 a 23:00 en naranja"* → crea el evento en el Calendar con ese color.
 - *"apunta que tengo que llevar el coche al taller"* → lo añade a pendientes (sin fecha).
-- *"planifica lo del coche el jueves a las 10h"* → busca el pendiente parecido a "coche", lo pasa al Calendar ese día/hora, y lo quita de la lista de pendientes.
+- *"añade a la lista de la compra: unas zapatillas de correr, una batidora"* → los añade a la lista de deseos (no a pendientes).
+- *"planifica lo del coche el jueves a las 10h"* → busca el pendiente parecido a "coche" (en cualquiera de las dos listas), lo pasa al Calendar ese día/hora, y lo quita de la lista.
+- **Audios**: mándale una nota de voz con cualquiera de las peticiones de arriba — la transcribe con Groq/Whisper y la trata exactamente igual que si la hubieras escrito. Te contesta primero con lo que ha entendido, para que puedas comprobar que la transcripción es correcta.
 - Colores reconocidos: azul, verde, rojo, amarillo, naranja, morado, rosa, gris.
-- Cada día a la hora que pongas en `REMINDER_HOUR` (8:00 por defecto), el bot te manda solo por su cuenta la lista de pendientes — no hace falta que se lo pidas.
+- Cada día a la hora que pongas en `REMINDER_HOUR` (8:00 por defecto), el bot te manda solo por su cuenta la lista de **pendientes** (no la de deseos, que no es urgente por naturaleza) — no hace falta que se lo pidas.
 
 ## Notas
 
