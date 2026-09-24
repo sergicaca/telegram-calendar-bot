@@ -113,6 +113,21 @@ def check_auth(update: Update) -> bool:
 
 # ---------- Calendar ----------
 
+def format_rango_horario(start_time: str, end_time: str) -> str:
+    """Convierte las horas de inicio/fin en un rango tipo '17-18h' (o
+    '17:30-18:00h' si algún extremo no cae en hora en punto)."""
+    if "T" not in start_time:
+        return "todo el día"
+    h_ini = start_time.split("T")[1][:5]
+    h_fin = end_time.split("T")[1][:5] if "T" in end_time else h_ini
+
+    def fmt(h):
+        hh, mm = h.split(":")
+        return hh if mm == "00" else h
+
+    return f"{fmt(h_ini)}-{fmt(h_fin)}h"
+
+
 def list_events(day_offset: int) -> str:
     service = get_calendar_service()
     day = dt.date.today() + dt.timedelta(days=day_offset)
@@ -131,8 +146,9 @@ def list_events(day_offset: int) -> str:
     lines = [f"📅 Eventos del {day.strftime('%d/%m')}:"]
     for e in events:
         start_time = e["start"].get("dateTime", e["start"].get("date"))
-        hora = start_time.split("T")[1][:5] if "T" in start_time else "todo el día"
-        lines.append(f"• {hora} — {e.get('summary', '(sin título)')}")
+        end_time = e["end"].get("dateTime", e["end"].get("date"))
+        rango = format_rango_horario(start_time, end_time)
+        lines.append(f"• {rango} — {e.get('summary', '(sin título)')}")
     return "\n".join(lines)
 
 
@@ -196,6 +212,28 @@ def find_task_by_title(query: str, lista: str = "pendientes"):
     return tasklist_id, None
 
 
+def complete_task(query: str, lista: str = "pendientes"):
+    """Marca como hecha la tarea encontrada. Devuelve None si no se encuentra."""
+    tasklist_id, tarea = find_task_by_title(query, lista)
+    if not tarea:
+        return None
+    service = get_tasks_service()
+    service.tasks().patch(
+        tasklist=tasklist_id, task=tarea["id"], body={"status": "completed"}
+    ).execute()
+    return f"✅ Marcado como hecho: \"{tarea['title']}\""
+
+
+def delete_task(query: str, lista: str = "pendientes"):
+    """Elimina directamente la tarea encontrada. Devuelve None si no se encuentra."""
+    tasklist_id, tarea = find_task_by_title(query, lista)
+    if not tarea:
+        return None
+    service = get_tasks_service()
+    service.tasks().delete(tasklist=tasklist_id, task=tarea["id"]).execute()
+    return f"🗑️ Eliminado de la lista: \"{tarea['title']}\""
+
+
 # ---------- Transcripción de audio (Groq / Whisper) ----------
 
 async def transcribir_audio(update: Update) -> str:
@@ -227,7 +265,7 @@ lista de deseos/compra):
 
 Devuelve SOLO un JSON (sin texto adicional, sin markdown) con esta forma exacta:
 {{
-  "intencion": "crear_evento" | "anadir_tarea" | "listar_tareas" | "planificar_tarea" | "otro",
+  "intencion": "crear_evento" | "anadir_tarea" | "listar_tareas" | "planificar_tarea" | "completar_tarea" | "eliminar_tarea" | "otro",
   "lista": "pendientes" | "deseos",   // a qué lista se refiere (anadir_tarea, listar_tareas, planificar_tarea). Por defecto "pendientes" si no está claro.
   "titulos": ["..."],           // lista de títulos — SOLO si intencion es anadir_tarea. Un mensaje puede pedir varios a la vez (comas, saltos de línea, guiones...) — una entrada por cada uno.
   "titulo": "...",              // título del evento (crear_evento) o texto para buscar la tarea (planificar_tarea)
@@ -251,6 +289,14 @@ Guía:
   cualquiera de las dos listas) y quiere ponerle fecha/hora en el calendario.
   En "titulo" pon el texto que identifica la tarea a buscar.
 - "listar_tareas": el usuario pregunta qué tiene en alguna de las dos listas.
+- "completar_tarea": el usuario dice que ya ha hecho/comprado/completado algo
+  de una lista (p. ej. "ya he comprado las zapatillas", "hecho: llamar al
+  dentista", "marca como hecho lo del coche"). En "titulo" el texto para
+  buscar esa tarea.
+- "eliminar_tarea": el usuario quiere quitar algo de la lista SIN haberlo
+  hecho, solo borrarlo (p. ej. "quita lo de las zapatillas de la lista",
+  "borra el pendiente del coche", "ya no hace falta lo de..."). En "titulo"
+  el texto para buscarla.
 - "otro": cualquier otra cosa (charla, pregunta no relacionada, mensaje
   incompleto sin contenido que añadir, etc.)."""
 
@@ -295,6 +341,26 @@ async def procesar_texto(update: Update, texto: str):
     elif intencion == "listar_tareas":
         await update.message.reply_text(list_tasks(lista))
 
+    elif intencion == "completar_tarea":
+        resultado = complete_task(data["titulo"], lista)
+        if not resultado:
+            await update.message.reply_text(
+                f"No encuentro nada parecido a \"{data['titulo']}\" en esa lista. "
+                f"Usa /tareas o /deseos para ver el contenido exacto."
+            )
+            return
+        await update.message.reply_text(resultado)
+
+    elif intencion == "eliminar_tarea":
+        resultado = delete_task(data["titulo"], lista)
+        if not resultado:
+            await update.message.reply_text(
+                f"No encuentro nada parecido a \"{data['titulo']}\" en esa lista. "
+                f"Usa /tareas o /deseos para ver el contenido exacto."
+            )
+            return
+        await update.message.reply_text(resultado)
+
     elif intencion == "planificar_tarea":
         tasklist_id, tarea = find_task_by_title(data["titulo"], lista)
         if not tarea:
@@ -315,6 +381,8 @@ async def procesar_texto(update: Update, texto: str):
             "• \"apunta que tengo que llamar al dentista\"\n"
             "• \"añade a la lista de la compra: unas zapatillas\"\n"
             "• \"planifica lo de las zapatillas el jueves a las 18h\"\n"
+            "• \"ya he hecho lo del dentista\" (lo marca como hecho)\n"
+            "• \"quita lo de las zapatillas de la lista\" (lo elimina)\n"
             "• /hoy, /manana, /tareas, /deseos"
         )
 
